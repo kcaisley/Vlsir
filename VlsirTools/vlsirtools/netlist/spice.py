@@ -225,12 +225,6 @@ class SpiceNetlister(SpectreSpiceShared):
         Note spice's primitive instances often differn syntactically from sub-circuit instances,
         in that they can have positional (only) parameters."""
 
-        # Write the instance name
-        self.write_instance_name(pinst, ref.spice_type)
-
-        # Write its port-connections
-        self.write_instance_conns(pinst, ref.module)
-
         # Resolve its parameter-values to spice-strings
         resolved_param_values = self.get_instance_params(pinst, ref.module)
 
@@ -264,6 +258,12 @@ class SpiceNetlister(SpectreSpiceShared):
 
         # Pop all positional parameters ("pp") from `resolved_param_values`
         pp = resolved_param_values.pop_many(positional_keys)
+
+        # Write the instance name
+        self.write_instance_name(pinst, ref.spice_type)
+
+        # Write its port-connections
+        self.write_instance_conns(pinst, ref.module)
 
         # Write the positional parameters, in the order specified by `positional_keys`
         self.writeln("+ " + " ".join([pp[pkey] for pkey in positional_keys]))
@@ -302,20 +302,14 @@ class SpiceNetlister(SpectreSpiceShared):
         elif name == "vpulse":
             keys = ["v1", "v2", "td", "tr", "tf", "tpw", "tper"]
             pp = resolved_param_values.pop_many(keys)
-            self.write(
-                f"+ pulse ("
-                + " ".join([self.format_expression(pp[k]) for k in keys])
-                + ") \n"
-            )
+            pulse_expr = " ".join([self.format_expression(pp[k]) for k in keys])
+            self.write(f"+ pulse ({pulse_expr}) \n")
 
         elif name == "vsin":
             keys = ["voff", "vamp", "freq", "td", "phase"]
             pp = resolved_param_values.pop_many(keys)
-            self.write(
-                f"+ sin ("
-                + " ".join([self.format_expression(pp[k]) for k in keys])
-                + ") \n"
-            )
+            sin_expr = " ".join([self.format_expression(pp[k]) for k in keys])
+            self.write(f"+ sin ({sin_expr}) \n")
 
         else:
             raise ValueError(f"Invalid or unsupported voltage-source type: {name}")
@@ -517,8 +511,13 @@ class XyceNetlister(SpiceNetlister):
         self.writeln(f".lib {lib.path} {lib.section}")
 
     def write_save(self, save: vsp.Save) -> None:
-        # FIXME!
-        raise NotImplementedError(f"Unimplemented control card {save} for {self}")
+        if save.mode == vsp.Save.SaveMode.ALL:
+            self.writeln(".save all")
+        elif save.mode == vsp.Save.SaveMode.NONE:
+            pass  # Don't save anything
+        elif save.signal:
+            signals = " ".join(s.strip() for s in save.signal.split(",") if s.strip())
+            self.writeln(f".save {signals}")
 
     def write_meas(self, meas: vsp.Meas) -> None:
         """# Write a measurement."""
@@ -655,8 +654,13 @@ class NgspiceNetlister(SpiceNetlister):
         return self.writeln(txt)
 
     def write_save(self, save: vsp.Save) -> None:
-        # FIXME!
-        raise NotImplementedError(f"Unimplemented Save {save} for {self}")
+        if save.mode == vsp.Save.SaveMode.ALL:
+            self.writeln(".save all")
+        elif save.mode == vsp.Save.SaveMode.NONE:
+            pass  # Don't save anything
+        elif save.signal:
+            signals = " ".join(s.strip() for s in save.signal.split(",") if s.strip())
+            self.writeln(f".save {signals}")
 
     def write_meas(self, meas: vsp.Meas) -> None:
         txt = f".meas {meas.analysis_type} {meas.name} {meas.expr}"
@@ -735,12 +739,19 @@ class NgspiceNetlister(SpiceNetlister):
         """# Write a transient analysis."""
         if not an.analysis_name:
             raise RuntimeError(f"Analysis name required for {an}")
-        if len(an.ctrls):
-            raise NotImplementedError
-        if len(an.ic):
-            raise NotImplementedError
 
-        self.writeln(f".tran {an.tstep} {an.tstop}\n")
+        # Write initial conditions as separate .ic statement
+        if an.ic:
+            ic_parts = [f"V({sig})={val}" for sig, val in an.ic.items()]
+            self.writeln(f".ic {' '.join(ic_parts)}")
+
+        # Write .tran statement
+        tstep = an.tstep if an.tstep > 0 else an.tstop / 1000
+        self.writeln(f".tran {tstep} {an.tstop}\n")
+
+        # Write control elements for this analysis
+        for ctrl in an.ctrls:
+            self.write_control_element(ctrl)
 
     def write_noise(self, an: vsp.NoiseInput) -> None:
         """# Write a noise analysis."""

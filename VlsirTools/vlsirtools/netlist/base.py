@@ -1,9 +1,12 @@
 """
-# Netlister Base Class 
+# Netlister Base Class
 """
 
 # Std-Lib Imports
-from typing import Optional, Union, IO, Dict, Iterable, List, Tuple
+from typing import Optional, Union, IO, Dict, Iterable, List, Tuple, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from .main import NetlistOptions
 from dataclasses import dataclass, field
 
 # Local Imports
@@ -160,9 +163,13 @@ class Netlister:
     * `get_*` methods, which retrieve some internal data, e.g. extracting the type of a `Connection`.
     """
 
-    def __init__(self, dest: IO):
+    def __init__(self, dest: IO, opts: Optional["NetlistOptions"] = None):
         self.dest = dest
-        self.indent = Indent(chars="  ")
+        self.opts = opts
+
+        # Use custom indent if provided
+        indent_chars = opts.indent if opts else "  "
+        self.indent = Indent(chars=indent_chars)
 
         self.module_names = set()  # Netlisted Module names
         self.pmodules = dict()  # Visited proto-Modules
@@ -388,7 +395,6 @@ class Netlister:
                 spice_type = SpiceType[schema_spice_type]
 
                 if spice_type == SpiceType.SUBCKT:  # External sub-circuit
-
                     # Check for duplicates on a name-only basis
                     # Most netlist formats have a single global namespace, so same-names conflict in netlist-language.
                     module_name = ref.external.name
@@ -404,7 +410,6 @@ class Netlister:
                     )
 
                 else:  # SPICE Model Reference
-
                     # Again check for duplicates on a name-only basis
                     modelname = ref.external.name
                     cached = self.spice_models_by_name.get(modelname, None)
@@ -605,6 +610,8 @@ class Netlister:
             op=self.write_op,
             tran=self.write_tran,
             noise=self.write_noise,
+            monte=self.write_monte,
+            sweep=self.write_sweep,
         )
         if inner not in inner_dispatch:
             self.fail(f"Invalid analysis type {inner}")
@@ -729,6 +736,14 @@ class Netlister:
 
     def write_noise(self, an: vsp.NoiseInput) -> None:
         """# Write a noise analysis."""
+        raise NotImplementedError
+
+    def write_monte(self, an: vsp.MonteInput) -> None:
+        """# Write a Monte Carlo analysis."""
+        raise NotImplementedError
+
+    def write_sweep(self, an: vsp.SweepInput) -> None:
+        """# Write a sweep analysis."""
         raise NotImplementedError
 
     """ 

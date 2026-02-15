@@ -185,18 +185,20 @@ message DcResult {
 // # Transient
 // ############################################################################
 
-// # Transient Analysis Inputs 
+// # Transient Analysis Inputs
 message TranInput {
   // (Optional) Analysis Name
   string analysis_name = 1;
-  // Stop Time 
-  double tstop = 2; 
-  // Time-step requirement or recommendation 
-  double tstep = 3; 
+  // Stop Time
+  double tstop = 2;
+  // Time-step requirement or recommendation
+  double tstep = 3;
   // Initial Conditions. Mapping in the form of {signal-name: value}
-  map <string, double> ic = 4; 
-  // Control Elements 
+  map <string, double> ic = 4;
+  // Control Elements
   repeated Control ctrls = 5;
+  // Enable noise in transient analysis (Spectre: isnoisy=yes)
+  bool noise = 10;
 }
 // # Transient Analysis Results 
 message TranResult {

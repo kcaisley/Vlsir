@@ -1,5 +1,5 @@
-""" 
-# Vlsir Netlisting 
+"""
+# Vlsir Netlisting
 ## The main `netlist` function(s).
 """
 
@@ -18,6 +18,7 @@ class NetlistOptions:
 
     indent: str = 2 * " "  # Indentation. Defaults to two spaces.
     width: int = 80  # Line-width. Defaults to 80.
+    compact: bool = False  # Compact instance formatting.
 
 
 ## FIXME: add more `Netlistable`s
@@ -54,15 +55,12 @@ def netlist(
     or their string equivalents.
     """
 
-    if opts is not None:
-        raise NotImplementedError("NetlistOptions")  # FIXME!
-
     # If `fmt` is a string, turn it into an enum
     fmt_enum = NetlistFormat.get(fmt)
 
     # Get the corresponding `Netlister` class and instantiate it
     netlister_cls = fmt_enum.netlister()
-    netlister = netlister_cls(dest=dest)
+    netlister = netlister_cls(dest=dest, opts=opts)
 
     # Write the netlist
     return netlister.write_package(pkg)

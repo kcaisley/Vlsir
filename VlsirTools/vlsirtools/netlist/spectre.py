@@ -165,42 +165,75 @@ class SpectreNetlister(SpectreSpiceShared):
         else:
             raise RuntimeError(f"Invalid reference {ref}")
 
-        # OK now we have everything we need to *write* the instance.
-        # Create the instance name
-        # Note spectre format does not include any `SpiceType` based prefixing
-        self.writeln(pinst.name + "")
+        # Check if compact mode is enabled
+        compact = self.opts.compact if self.opts else False
 
-        if module.ports:
-            self.writeln("+ // Ports: ")
-            # Get `module`'s port-order
-            port_order = [pport.signal for pport in module.ports]
-            # And write the Instance ports, in that order
-            pconns = []
-            connection_targets = {
-                connection.portname: connection.target
-                for connection in pinst.connections
-            }
-            for pname in port_order:
-                pconn = connection_targets.get(pname, None)
-                if pconn is None:
-                    raise RuntimeError(f"Unconnected Port {pname} on {pinst.name}")
-                pconns.append(pconn)
-            self.writeln(
-                "+ ( "
-                + " ".join([self.format_connection_target(pconn) for pconn in pconns])
-                + " )"
-            )
+        if compact:
+            # Build single-line instance
+            parts = [pinst.name]
+
+            # Add ports
+            if module.ports:
+                port_order = [pport.signal for pport in module.ports]
+                connection_targets = {c.portname: c.target for c in pinst.connections}
+                pconns = []
+                for pname in port_order:
+                    pconn = connection_targets.get(pname)
+                    if pconn is None:
+                        raise RuntimeError(f"Unconnected Port {pname} on {pinst.name}")
+                    pconns.append(self.format_connection_target(pconn))
+                parts.append("( " + " ".join(pconns) + " )")
+
+            # Add module name
+            parts.append(module_name)
+
+            # Add parameters
+            if resolved_instance_parameters:
+                params = " ".join(
+                    f"{k}={v}" for k, v in resolved_instance_parameters.items()
+                )
+                parts.append(params)
+
+            self.writeln(" ".join(parts))
         else:
-            self.writeln("+ // No ports ")
+            # Original verbose format
+            # Create the instance name
+            # Note spectre format does not include any `SpiceType` based prefixing
+            self.writeln(pinst.name + "")
 
-        # Write the module-name
-        self.writeln("+  " + module_name + " ")
+            if module.ports:
+                self.writeln("+ // Ports: ")
+                # Get `module`'s port-order
+                port_order = [pport.signal for pport in module.ports]
+                # And write the Instance ports, in that order
+                pconns = []
+                connection_targets = {
+                    connection.portname: connection.target
+                    for connection in pinst.connections
+                }
+                for pname in port_order:
+                    pconn = connection_targets.get(pname, None)
+                    if pconn is None:
+                        raise RuntimeError(f"Unconnected Port {pname} on {pinst.name}")
+                    pconns.append(pconn)
+                self.writeln(
+                    "+ ( "
+                    + " ".join(
+                        [self.format_connection_target(pconn) for pconn in pconns]
+                    )
+                    + " )"
+                )
+            else:
+                self.writeln("+ // No ports ")
 
-        # Write the instance parameters
-        self.write_instance_params(resolved_instance_parameters)
+            # Write the module-name
+            self.writeln("+  " + module_name + " ")
 
-        # And add a post-instance blank line
-        self.writeln("")
+            # Write the instance parameters
+            self.write_instance_params(resolved_instance_parameters)
+
+            # And add a post-instance blank line
+            self.writeln("")
 
     def write_instance_params(self, pvals: ResolvedParams) -> None:
         """Write Instance parameters `pvals`"""
@@ -289,16 +322,23 @@ class SpectreNetlister(SpectreSpiceShared):
 
     def write_save(self, save: vsp.Save) -> None:
         """# Write a `Save` statement"""
-        # FIXME!
-        raise NotImplementedError(f"Unimplemented control card {save} for {self}")
+        # Spectre uses `save` statement for specifying signals to save
+        # Mode: NONE means save nothing, ALL means save everything
+        if save.mode == vsp.Save.SaveMode.ALL:
+            self.writeln("save *")
+        elif save.mode == vsp.Save.SaveMode.NONE:
+            pass  # Don't save anything
+        elif save.signal:
+            # Save specific signal
+            signals = " ".join(s.strip() for s in save.signal.split(",") if s.strip())
+            self.writeln(f"save {signals}")
 
     def write_meas(self, meas: vsp.Meas) -> None:
-        """# Write a `Meas` statement"""
-        # Measurements are written in Spice syntax; wrap them in "simulator lang".
-        self.writeln(f"simulator lang=spice")
+        """# Write a SPICE-style `.meas` wrapped in Spectre language switches."""
+        self.writeln("simulator lang=spice")
         txt = f".meas {meas.analysis_type} {meas.name} {meas.expr}"
         self.writeln(txt)
-        self.writeln(f"simulator lang=spectre")
+        self.writeln("simulator lang=spectre")
 
     def write_sim_param(self, param: vlsir.Param) -> None:
         """# Write a simulation-level parameter"""
@@ -307,8 +347,8 @@ class SpectreNetlister(SpectreSpiceShared):
 
     def write_sim_option(self, opt: vsp.SimOptions) -> None:
         """# Write a simulation option"""
-        # FIXME: make this just `Param` instead
-        raise NotImplementedError
+        # Spectre syntax: <name> options <option>=<value>
+        self.writeln(f"simOpts options {opt.name}={self.get_param_value(opt.value)}")
 
     def write_ac(self, an: vsp.AcInput) -> None:
         """# Write an AC analysis."""
@@ -373,13 +413,118 @@ class SpectreNetlister(SpectreSpiceShared):
 
         if not an.analysis_name:
             raise RuntimeError(f"Analysis name required for {an}")
-        if len(an.ctrls):
-            raise NotImplementedError
-        if len(an.ic):
-            raise NotImplementedError
 
-        self.writeln(f"{an.analysis_name} tran stop={an.tstop} ")
+        # Build the tran command parts
+        parts = [f"{an.analysis_name} tran stop={an.tstop}"]
+
+        # Add tstep if specified
+        if an.tstep > 0:
+            parts.append(f"step={an.tstep}")
+
+        # Handle initial conditions inline
+        if an.ic:
+            ic_str = " ".join(f"{sig}={val}" for sig, val in an.ic.items())
+            parts.append(f"ic {ic_str}")
+
+        # Add noise option (Spectre-specific)
+        if an.noise:
+            parts.append("isnoisy=yes")
+
+        self.writeln(" ".join(parts))
+
+        # Write control elements for this analysis
+        for ctrl in an.ctrls:
+            self.write_control_element(ctrl)
 
     def write_noise(self, an: vsp.NoiseInput) -> None:
         """# Write a noise analysis."""
         raise NotImplementedError
+
+    def write_monte(self, an: vsp.MonteInput) -> None:
+        """# Write a Spectre-native Monte Carlo analysis block.
+
+        Emits:
+            <name> montecarlo numruns=<npts> seed=<seed> variations=all {
+                <controls>
+                <child analyses>
+            }
+        """
+        if not an.analysis_name:
+            raise RuntimeError(f"Analysis name required for {an}")
+
+        # Build the montecarlo header
+        parts = [f"{an.analysis_name} montecarlo"]
+        parts.append(f"numruns={an.npts}")
+        if an.seed:
+            parts.append(f"seed={an.seed}")
+        parts.append("variations=all")
+        self.writeln(" ".join(parts) + " {")
+
+        # Indent the block contents
+        self.indent += 1
+
+        # Write control elements for the Monte Carlo block
+        for ctrl in an.ctrls:
+            self.write_control_element(ctrl)
+
+        # Write each child analysis
+        for child_an in an.an:
+            self.write_analysis(child_an)
+
+        # Close the block
+        self.indent -= 1
+        self.writeln("}")
+        self.writeln("")
+
+    def write_sweep(self, an: vsp.SweepInput) -> None:
+        """# Write a Spectre-native sweep analysis block.
+
+        Emits:
+            <name> sweep param=<variable> values=[...] or start/stop/step {
+                <controls>
+                <child analyses>
+            }
+        """
+        if not an.analysis_name:
+            raise RuntimeError(f"Analysis name required for {an}")
+
+        # Build the sweep header
+        parts = [f"{an.analysis_name} sweep"]
+        parts.append(f"param={an.variable}")
+
+        # Interpret the sweep values
+        sweep_type = an.sweep.WhichOneof("tp")
+        if sweep_type == "linear":
+            sweep = an.sweep.linear
+            parts.append(f"start={sweep.start}")
+            parts.append(f"stop={sweep.stop}")
+            parts.append(f"step={sweep.step}")
+        elif sweep_type == "log":
+            sweep = an.sweep.log
+            parts.append(f"start={sweep.start}")
+            parts.append(f"stop={sweep.stop}")
+            parts.append(f"dec={int(sweep.npts)}")
+        elif sweep_type == "points":
+            sweep = an.sweep.points
+            pts_str = " ".join(str(p) for p in sweep.points)
+            parts.append(f"values=[{pts_str}]")
+        else:
+            raise ValueError("Invalid sweep type")
+
+        self.writeln(" ".join(parts) + " {")
+
+        # Indent the block contents
+        self.indent += 1
+
+        # Write control elements for the sweep block
+        for ctrl in an.ctrls:
+            self.write_control_element(ctrl)
+
+        # Write each child analysis
+        for child_an in an.an:
+            self.write_analysis(child_an)
+
+        # Close the block
+        self.indent -= 1
+        self.writeln("}")
+        self.writeln("")
