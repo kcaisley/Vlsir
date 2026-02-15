@@ -30,6 +30,7 @@ def map_primitive(rmodule: SpiceBuiltin, paramvals: ResolvedParams) -> str:
         vtypes = dict(
             vdc="dc",
             vpulse="pulse",
+            vpwl="pwl",
             vsin="sine",
         )
         if vname not in vtypes:
@@ -46,6 +47,12 @@ def map_primitive(rmodule: SpiceBuiltin, paramvals: ResolvedParams) -> str:
             paramvals.rename("tf", "fall")
             paramvals.rename("tpw", "width")
             paramvals.rename("tper", "period")
+        elif vname == "vpwl":
+            # Spectre expects `wave=[t0 v0 t1 v1 ...]`.
+            wave = paramvals.pop("wave").strip()
+            if not wave.startswith("["):
+                wave = f"[{wave}]"
+            paramvals.set("wave", wave)
         elif vname == "vdc":
             if "ac" in paramvals:
                 paramvals.rename("ac", "mag")

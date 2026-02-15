@@ -306,25 +306,27 @@ package = Package(
             ],
             spicetype=SpiceType.VSOURCE,
         ),
-        # FIXME: there's no straightforward way to implement "pwl", without list-valued parameters
-        # ExternalModule(
-        #     name=_qname("vpwl"),
-        #     desc=dedent(
-        #         """
-        #         # Piece-wise Linear Voltage Source
-        #         Driven by a set of (time, voltage) pairs.
-        #
-        #         Ports: (p, n)
-        #         Params: FIXME
-        #
-        #         All other parameters are passed unmodifed to netlist-level formats.
-        #         """
-        #     ),
-        #     ports=_ports(("p", "n")),
-        #     signals=_signals(("p", "n")),
-        #     parameters=[],
-        #     spicetype = SpiceType.VSOURCE,
-        # ),
+        ExternalModule(
+            name=_qname("vpwl"),
+            desc=dedent(
+                """
+                # Piece-wise Linear Voltage Source
+                Driven by a set of (time, voltage) pairs.
+
+                Ports: (p, n)
+                Params: `wave`
+
+                Parameter `wave` is a whitespace-separated sequence of
+                time/value pairs, e.g. `0 0 1n 1.2 2n 0`.
+                """
+            ),
+            ports=_ports(("p", "n")),
+            signals=_signals(("p", "n")),
+            parameters=[
+                Param(name="wave", desc="PWL waveform as time/value pairs"),
+            ],
+            spicetype=SpiceType.VSOURCE,
+        ),
     ],
 )
 

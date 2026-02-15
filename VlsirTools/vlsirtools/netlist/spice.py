@@ -305,6 +305,12 @@ class SpiceNetlister(SpectreSpiceShared):
             pulse_expr = " ".join([self.format_expression(pp[k]) for k in keys])
             self.write(f"+ pulse ({pulse_expr}) \n")
 
+        elif name == "vpwl":
+            wave = resolved_param_values.pop("wave").strip()
+            if wave.startswith("[") and wave.endswith("]"):
+                wave = wave[1:-1].strip()
+            self.write(f"+ pwl ({wave}) \n")
+
         elif name == "vsin":
             keys = ["voff", "vamp", "freq", "td", "phase"]
             pp = resolved_param_values.pop_many(keys)
