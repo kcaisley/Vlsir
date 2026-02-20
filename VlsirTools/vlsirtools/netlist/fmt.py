@@ -12,6 +12,7 @@ import vlsir
 # Locally-defined netlister classes
 from .spectre import SpectreNetlister
 from .verilog import VerilogNetlister
+from .gdsfactory_yaml import GdsfactoryYamlNetlister
 from .spice import (
     SpiceNetlister,
     HspiceNetlister,
@@ -27,6 +28,7 @@ class NetlistFormat(Enum):
 
     VERILOG = "verilog"
     SPECTRE = "spectre"
+    GDSFACTORY_YAML = "gdsfactory_yaml"
 
     # Spice Dialects
     SPICE = "spice"
@@ -40,8 +42,18 @@ class NetlistFormat(Enum):
         """Get the format specified by `spec`, in either enum or string terms.
         Only does real work in the case when `spec` is a string, otherwise returns it unchanged.
         """
-        if isinstance(spec, (NetlistFormat, str)):
-            return NetlistFormat(spec)
+        if isinstance(spec, NetlistFormat):
+            return spec
+        if isinstance(spec, str):
+            aliases = {
+                "yaml": "gdsfactory_yaml",
+                "yml": "gdsfactory_yaml",
+                "gdsfactory": "gdsfactory_yaml",
+                "gdsfactory-yaml": "gdsfactory_yaml",
+                "gdsfactory_yaml": "gdsfactory_yaml",
+            }
+            normalized = aliases.get(spec.lower(), spec.lower())
+            return NetlistFormat(normalized)
         raise TypeError
 
     def netlister(self) -> type:
@@ -50,6 +62,8 @@ class NetlistFormat(Enum):
             return SpectreNetlister
         if self == NetlistFormat.VERILOG:
             return VerilogNetlister
+        if self == NetlistFormat.GDSFACTORY_YAML:
+            return GdsfactoryYamlNetlister
         if self == NetlistFormat.SPICE:
             return SpiceNetlister
         if self == NetlistFormat.HSPICE:
@@ -79,6 +93,10 @@ class NetlistFormat(Enum):
             return F.CDL
         if self == NetlistFormat.VERILOG:
             return F.VERILOG
+        if self == NetlistFormat.GDSFACTORY_YAML:
+            raise ValueError(
+                "`gdsfactory_yaml` has no protobuf NetlistFormat enum mapping"
+            )
         raise ValueError(f"Unknown NetlistFormat: {self}")
 
     @staticmethod

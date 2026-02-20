@@ -6,7 +6,7 @@ import vlsir
 import vlsir.circuit_pb2 as vckt
 
 # Import the base-class
-from .base import Netlister, ResolvedModule, ResolvedParams
+from .base import Netlister, ResolvedModule, ResolvedParams, SpiceModelRef, SpiceBuiltin
 
 
 class VerilogNetlister(Netlister):
@@ -107,12 +107,17 @@ class VerilogNetlister(Netlister):
         """Format and write Instance `pinst`"""
 
         # Get its Module or ExternalModule definition
-        rmodule = self.resolve_reference(pinst.module)
-        if not isinstance(rmodule, ResolvedModule):
-            # Spice-level primitives and models are generally not available in Verilog runtimes,
-            # and hence generate errors here if attempted in netlisting.
-            raise RuntimeError(f"Invalid module for Verilog: {rmodule}")
-        module, module_name = rmodule.module, rmodule.module_name
+        resolved = self.resolve_reference(pinst.module)
+        if isinstance(resolved, ResolvedModule):
+            module, module_name = resolved.module, resolved.module_name
+        elif isinstance(resolved, SpiceModelRef):
+            # Model-based devices are leaves in structural Verilog.
+            module, module_name = resolved.module, resolved.model_name
+        elif isinstance(resolved, SpiceBuiltin):
+            # Emit SPICE builtins as leaf module instances by primitive name.
+            module, module_name = resolved.module, resolved.module.name.name
+        else:
+            raise RuntimeError(f"Invalid module for Verilog: {resolved}")
 
         # Resolve its parameter values
         resolved_instance_parameters = self.get_instance_params(pinst, module)
@@ -204,14 +209,12 @@ class VerilogNetlister(Netlister):
             vckt.Port.Direction.Value("INPUT"): "input",
             vckt.Port.Direction.Value("OUTPUT"): "output",
             vckt.Port.Direction.Value("INOUT"): "inout",
-            vckt.Port.Direction.Value("NONE"): "NO_DIRECTION",
+            # Analog/ physical netlists frequently use undirected ports.
+            vckt.Port.Direction.Value("NONE"): "inout",
         }
         dir_ = port_type_to_str.get(pport.direction, None)
         if dir_ is None:
             msg = f"Invalid Verilog netlisting for unknown Port direction {pport.direction}"
-            raise RuntimeError(msg)
-        if dir_ == "NO_DIRECTION":
-            msg = f"Invalid Verilog netlisting for undirected Port {pport}"
             raise RuntimeError(msg)
 
         return dir_ + " " + self.format_signal_decl(self.get_signal(pport.signal))

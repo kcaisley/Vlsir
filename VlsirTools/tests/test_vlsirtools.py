@@ -4,6 +4,7 @@ Unit Tests
 """
 
 import os
+import json
 import numpy as np
 import pytest
 from io import StringIO
@@ -53,6 +54,16 @@ def _params(**kwargs):
 def _prim(name: str) -> Reference:
     """Create a `Reference` to primitive `name`"""
     return Reference(external=QualifiedName(domain="vlsir.primitives", name=name))
+
+
+def _load_yaml_like(text: str) -> dict:
+    """Load YAML (or JSON fallback) content from `text`."""
+    try:
+        import yaml
+
+        return yaml.safe_load(text)
+    except ImportError:
+        return json.loads(text)
 
 
 def test_version():
@@ -134,6 +145,136 @@ def test_verilog_netlist1():
     vlsirtools.netlist(pkg=pkg, dest=dest, fmt="spice")
     vlsirtools.netlist(pkg=pkg, dest=dest, fmt="spectre")
     vlsirtools.netlist(pkg=pkg, dest=dest, fmt="xyce")
+
+
+def test_verilog_netlist_model_ref():
+    """Model-based external modules should netlist as Verilog leaf instances."""
+
+    nmos = vlsirtools.primitives.mos(name="nch_lvt", domain="my_pdk")
+
+    pkg = Package(
+        domain="vlsirtools.tests.test_verilog_netlist_model_ref",
+        ext_modules=[nmos],
+        modules=[
+            Module(
+                name="top",
+                ports=[
+                    Port(direction="NONE", signal="d"),
+                    Port(direction="NONE", signal="g"),
+                    Port(direction="NONE", signal="s"),
+                    Port(direction="NONE", signal="b"),
+                ],
+                signals=[
+                    Signal(name="d", width=1),
+                    Signal(name="g", width=1),
+                    Signal(name="s", width=1),
+                    Signal(name="b", width=1),
+                ],
+                instances=[
+                    Instance(
+                        name="mn",
+                        module=Reference(external=nmos.name),
+                        connections=_connections(
+                            d=ConnectionTarget(sig="d"),
+                            g=ConnectionTarget(sig="g"),
+                            s=ConnectionTarget(sig="s"),
+                            b=ConnectionTarget(sig="b"),
+                        ),
+                    )
+                ],
+            )
+        ],
+    )
+
+    dest = StringIO()
+    vlsirtools.netlist(pkg=pkg, dest=dest, fmt="verilog")
+    netlist = dest.getvalue()
+    assert "nch_lvt" in netlist
+    assert "mn" in netlist
+
+
+def test_gdsfactory_yaml_netlist():
+    """Test recursive GDSFactory YAML netlisting of hierarchical physical modules."""
+
+    nmos = vlsirtools.primitives.mos(name="nch_lvt", domain="my_pdk")
+
+    pkg = Package(
+        domain="vlsirtools.tests.test_gdsfactory_yaml_netlist",
+        ext_modules=[nmos],
+        modules=[
+            Module(
+                name="inner",
+                ports=[
+                    Port(direction="NONE", signal="d"),
+                    Port(direction="NONE", signal="g"),
+                    Port(direction="NONE", signal="s"),
+                    Port(direction="NONE", signal="b"),
+                ],
+                signals=[
+                    Signal(name="d", width=1),
+                    Signal(name="g", width=1),
+                    Signal(name="s", width=1),
+                    Signal(name="b", width=1),
+                ],
+                instances=[
+                    Instance(
+                        name="mn",
+                        module=Reference(external=nmos.name),
+                        connections=_connections(
+                            d=ConnectionTarget(sig="d"),
+                            g=ConnectionTarget(sig="g"),
+                            s=ConnectionTarget(sig="s"),
+                            b=ConnectionTarget(sig="b"),
+                        ),
+                        parameters=_params(
+                            l=ParamValue(
+                                prefixed=vutils.Prefixed(
+                                    prefix="MICRO", string_value="1"
+                                )
+                            )
+                        ),
+                    )
+                ],
+            ),
+            Module(
+                name="top",
+                ports=[
+                    Port(direction="NONE", signal="d"),
+                    Port(direction="NONE", signal="g"),
+                    Port(direction="NONE", signal="s"),
+                    Port(direction="NONE", signal="b"),
+                ],
+                signals=[
+                    Signal(name="d", width=1),
+                    Signal(name="g", width=1),
+                    Signal(name="s", width=1),
+                    Signal(name="b", width=1),
+                ],
+                instances=[
+                    Instance(
+                        name="xinner",
+                        module=Reference(local="inner"),
+                        connections=_connections(
+                            d=ConnectionTarget(sig="d"),
+                            g=ConnectionTarget(sig="g"),
+                            s=ConnectionTarget(sig="s"),
+                            b=ConnectionTarget(sig="b"),
+                        ),
+                    )
+                ],
+            ),
+        ],
+    )
+
+    dest = StringIO()
+    vlsirtools.netlist(pkg=pkg, dest=dest, fmt="yaml")
+    recnet = _load_yaml_like(dest.getvalue())
+
+    assert recnet["inner"]["instances"]["mn"]["component"] == "nch_lvt"
+    assert recnet["inner"]["instances"]["mn"]["settings"]["l"] == "1e-6"
+    assert recnet["inner"]["ports"]["d"] == "mn,d"
+    assert recnet["top"]["instances"]["xinner"]["component"] == "inner"
+    assert recnet["top"]["ports"]["d"] == "xinner,d"
 
 
 def test_spice_netlist1():
