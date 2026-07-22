@@ -11,7 +11,7 @@ def test_primitives1():
     assert isinstance(primitives.package.desc, str)
     assert len(primitives.package.desc)
     assert len(primitives.package.modules) == 0
-    assert len(primitives.package.ext_modules) == 11
+    assert len(primitives.package.ext_modules) == 13
     assert [m.name.name for m in primitives.package.ext_modules] == [
         "resistor",
         "capacitor",
@@ -24,6 +24,8 @@ def test_primitives1():
         "vdc",
         "vpulse",
         "vsin",
+        "vpwl",
+        "vbit",
     ]
 
     assert isinstance(primitives.resistor, vckt.ExternalModule)
@@ -69,6 +71,25 @@ def test_primitives1():
     assert isinstance(primitives.vsin, vckt.ExternalModule)
     assert isinstance(primitives.dct["vsin"], vckt.ExternalModule)
     assert primitives.vsin is primitives.dct["vsin"]
+
+    assert isinstance(primitives.vpwl, vckt.ExternalModule)
+    assert isinstance(primitives.dct["vpwl"], vckt.ExternalModule)
+    assert primitives.vpwl is primitives.dct["vpwl"]
+
+    assert isinstance(primitives.vbit, vckt.ExternalModule)
+    assert isinstance(primitives.dct["vbit"], vckt.ExternalModule)
+    assert primitives.vbit is primitives.dct["vbit"]
+    assert [param.name for param in primitives.vbit.parameters] == [
+        "data",
+        "period",
+        "val0",
+        "val1",
+        "delay",
+        "rise",
+        "fall",
+        "rptstart",
+        "rpttimes",
+    ]
 
 
 def test_primitive_functions():

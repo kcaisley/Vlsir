@@ -31,6 +31,7 @@ def map_primitive(rmodule: SpiceBuiltin, paramvals: ResolvedParams) -> str:
             vdc="dc",
             vpulse="pulse",
             vpwl="pwl",
+            vbit="bit",
             vsin="sine",
         )
         if vname not in vtypes:
@@ -53,6 +54,12 @@ def map_primitive(rmodule: SpiceBuiltin, paramvals: ResolvedParams) -> str:
             if not wave.startswith("["):
                 wave = f"[{wave}]"
             paramvals.set("wave", wave)
+        elif vname == "vbit":
+            # Hdl21 currently exports string-valued primitive parameters as
+            # expression literals. Spectre requires bit data to be quoted.
+            data = paramvals.get("data")
+            if not (data.startswith('"') and data.endswith('"')):
+                paramvals.set("data", f'"{data}"')
         elif vname == "vdc":
             if "ac" in paramvals:
                 paramvals.rename("ac", "mag")

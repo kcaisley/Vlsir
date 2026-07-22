@@ -1,4 +1,4 @@
-""" 
+"""
 # Vlsir(Tools) Primitives
 
 Defines the `vlsir.circuit.Package`-worth of the primitive elements
@@ -15,7 +15,6 @@ from vlsir.circuit_pb2 import (
     Signal,
     SpiceType,
 )
-
 
 """
 Some Helper Content
@@ -72,8 +71,7 @@ package = Package(
     ext_modules=[  # Primitives are all `ExternalModule`s
         ExternalModule(
             name=_qname("resistor"),
-            desc=dedent(
-                """
+            desc=dedent("""
                 # Ideal Resistor
 
                 Ports: (p, n) 
@@ -83,8 +81,7 @@ package = Package(
                 Largely corresponds to the "R-prefix" element of Spice-class simulators. 
                 
                 Additional parameters such as temperature coefficients are allowed, and are to be passed unmodified to netlist formats. 
-                """
-            ),
+                """),
             ports=_ports(("p", "n")),
             signals=_signals(("p", "n")),
             parameters=[
@@ -94,8 +91,7 @@ package = Package(
         ),
         ExternalModule(
             name=_qname("capacitor"),
-            desc=dedent(
-                """
+            desc=dedent("""
                 # Ideal Capacitor
 
                 Ports: (p, n) 
@@ -105,8 +101,7 @@ package = Package(
                 Largely corresponds to the "C-prefix" element of Spice-class simulators. 
                 
                 Additional parameters are allowed, and are to be passed unmodified to netlist formats. 
-                """
-            ),
+                """),
             ports=_ports(("p", "n")),
             signals=_signals(("p", "n")),
             parameters=[
@@ -116,8 +111,7 @@ package = Package(
         ),
         ExternalModule(
             name=_qname("inductor"),
-            desc=dedent(
-                """
+            desc=dedent("""
                 # Ideal Inductor
 
                 Ports: (p, n) 
@@ -127,8 +121,7 @@ package = Package(
                 Largely corresponds to the "L-prefix" element of Spice-class simulators. 
                 
                 Additional parameters are allowed, and are to be passed unmodified to netlist formats. 
-                """
-            ),
+                """),
             ports=_ports(("p", "n")),
             signals=_signals(("p", "n")),
             parameters=[
@@ -138,16 +131,14 @@ package = Package(
         ),
         ExternalModule(
             name=_qname("vcvs"),
-            desc=dedent(
-                """
+            desc=dedent("""
                 # Voltage-Controlled Voltage Source
 
                 Ports: (p, n, ctrlp, ctrln) 
                 Params: `gain`, voltage gain (in Volts/Volt)
 
                 Largely corresponds to the "e-prefix" element of Spice-class simulators. 
-                """
-            ),
+                """),
             ports=_ports(("p", "n", "cp", "cn")),
             signals=_signals(("p", "n", "cp", "cn")),
             parameters=[
@@ -157,16 +148,14 @@ package = Package(
         ),
         ExternalModule(
             name=_qname("vccs"),
-            desc=dedent(
-                """
+            desc=dedent("""
                 # Voltage-Controlled Current Source
 
                 Ports: (p, n, ctrlp, ctrln) 
                 Params: `gain`, transconductance gain (in Amps/Volt)
 
                 Largely corresponds to the "g-prefix" element of Spice-class simulators. 
-                """
-            ),
+                """),
             ports=_ports(("p", "n", "cp", "cn")),
             signals=_signals(("p", "n", "cp", "cn")),
             parameters=[
@@ -176,16 +165,14 @@ package = Package(
         ),
         ExternalModule(
             name=_qname("cccs"),
-            desc=dedent(
-                """
+            desc=dedent("""
                 # Current-Controlled Current Source
 
                 Ports: (p, n, ctrlp, ctrln) 
                 Params: `gain`, current gain (in Amps/Amp)
 
                 Largely corresponds to the "f-prefix" element of Spice-class simulators. 
-                """
-            ),
+                """),
             ports=_ports(("p", "n", "cp", "cn")),
             signals=_signals(("p", "n", "cp", "cn")),
             parameters=[
@@ -195,16 +182,14 @@ package = Package(
         ),
         ExternalModule(
             name=_qname("ccvs"),
-            desc=dedent(
-                """
+            desc=dedent("""
                 # Current-Controlled Voltage Source
 
                 Ports: (p, n, ctrlp, ctrln) 
                 Params: `gain`, transresistance gain (in Volts/Amp)
 
                 Largely corresponds to the "h-prefix" element of Spice-class simulators. 
-                """
-            ),
+                """),
             ports=_ports(("p", "n", "cp", "cn")),
             signals=_signals(("p", "n", "cp", "cn")),
             parameters=[
@@ -214,8 +199,7 @@ package = Package(
         ),
         ExternalModule(
             name=_qname("isource"),
-            desc=dedent(
-                """
+            desc=dedent("""
                 # Independent Current Source
 
                 Ports: (p, n) 
@@ -224,8 +208,7 @@ package = Package(
                 Largely corresponds to the "i-prefix" element of Spice-class simulators. 
                 Sole required parameter `dc` sets the DC value. 
                 All other parameters are passed unmodifed to netlist-level formats. 
-                """
-            ),
+                """),
             ports=_ports(("p", "n")),
             signals=_signals(("p", "n")),
             parameters=[
@@ -235,16 +218,14 @@ package = Package(
         ),
         ExternalModule(
             name=_qname("vdc"),
-            desc=dedent(
-                """
+            desc=dedent("""
                 # Independent Voltage Source
 
                 Ports: (p, n) 
                 Params: `dc`, dc voltage (in Volts)
 
                 All other parameters are passed unmodifed to netlist-level formats. 
-                """
-            ),
+                """),
             ports=_ports(("p", "n")),
             signals=_signals(("p", "n")),
             parameters=[
@@ -259,8 +240,7 @@ package = Package(
         ),
         ExternalModule(
             name=_qname("vpulse"),
-            desc=dedent(
-                """
+            desc=dedent("""
                 # Pulse Voltage Source
                 Two-value time-alternating voltage, with parametrizable rise and fall times and delays.
 
@@ -268,8 +248,7 @@ package = Package(
                 Params: FIXME!
 
                 All other parameters are passed unmodifed to netlist-level formats. 
-                """
-            ),
+                """),
             ports=_ports(("p", "n")),
             signals=_signals(("p", "n")),
             parameters=[
@@ -285,16 +264,14 @@ package = Package(
         ),
         ExternalModule(
             name=_qname("vsin"),
-            desc=dedent(
-                """
+            desc=dedent("""
                 # Sinusoidal Voltage Source
 
                 Ports: (p, n) 
                 Params: FIXME!
 
                 All other parameters are passed unmodifed to netlist-level formats. 
-                """
-            ),
+                """),
             ports=_ports(("p", "n")),
             signals=_signals(("p", "n")),
             parameters=[
@@ -308,8 +285,7 @@ package = Package(
         ),
         ExternalModule(
             name=_qname("vpwl"),
-            desc=dedent(
-                """
+            desc=dedent("""
                 # Piece-wise Linear Voltage Source
                 Driven by a set of (time, voltage) pairs.
 
@@ -318,12 +294,58 @@ package = Package(
 
                 Parameter `wave` is a whitespace-separated sequence of
                 time/value pairs, e.g. `0 0 1n 1.2 2n 0`.
-                """
-            ),
+                """),
             ports=_ports(("p", "n")),
             signals=_signals(("p", "n")),
             parameters=[
                 Param(name="wave", desc="PWL waveform as time/value pairs"),
+            ],
+            spicetype=SpiceType.VSOURCE,
+        ),
+        ExternalModule(
+            name=_qname("vbit"),
+            desc=dedent("""
+                # Digital Bit-Pattern Voltage Source
+
+                Ports: (p, n)
+                Params: `data`, `period`, `val0`, `val1`, `delay`,
+                `rise`, `fall`, `rptstart`, and `rpttimes`.
+
+                Spectre-native bit-pattern source. Other SPICE-family
+                netlisters do not currently support this source type.
+                """),
+            ports=_ports(("p", "n")),
+            signals=_signals(("p", "n")),
+            parameters=[
+                Param(name="data", desc="Digital bit string"),
+                Param(name="period", desc="Bit period (s)"),
+                Param(
+                    name="val0",
+                    desc="Zero value (V)",
+                    value=ParamValue(int64_value=0),
+                ),
+                Param(
+                    name="val1",
+                    desc="One value (V)",
+                    value=ParamValue(int64_value=1),
+                ),
+                Param(
+                    name="delay",
+                    desc="Delay before first bit (s)",
+                    value=ParamValue(int64_value=0),
+                ),
+                Param(name="rise", desc="Rise time (s)"),
+                Param(name="fall", desc="Fall time (s)"),
+                Param(
+                    name="rptstart",
+                    desc="One-based repeat start",
+                    value=ParamValue(int64_value=1),
+                ),
+                Param(
+                    name="rpttimes",
+                    desc="Repeat count",
+                    value=ParamValue(int64_value=0),
+                ),
             ],
             spicetype=SpiceType.VSOURCE,
         ),
@@ -368,8 +390,7 @@ def mos(
 
     # Apply defaults to `domain` and `desc`
     domain = domain or "vlsir.primitives.mos"
-    desc = desc or dedent(
-        """
+    desc = desc or dedent("""
             # Mosfet Transistor
 
             Ports: (d, g, s, b), in identical order to SPICE convention 
@@ -378,8 +399,7 @@ def mos(
             `vlsir.primitives.mos` Largely corresponds to the "M-prefix" element of Spice-class simulators. 
             Each instance maps to a *spice model* instance ("`m1`"), *not* to sub-circuit instance ("`x1`"). 
             In many cases, particularly for technology-provided devices, using a foundry-provided sub-circuit will be appropriate instead. 
-            """
-    )
+            """)
     return ExternalModule(
         name=QualifiedName(domain=domain, name=name),
         desc=desc,
@@ -397,8 +417,7 @@ def bipolar(
 
     # Apply defaults
     domain = domain or "vlsir.primitives.bipolar"
-    desc = desc or dedent(
-        """
+    desc = desc or dedent("""
         # Bipolar Junction Transistor (BJT)
 
         Ports: (c, b, e), in identical order to SPICE convention 
@@ -408,8 +427,7 @@ def bipolar(
         Each instance maps to a *spice model* instance ("`q1`"), *not* to sub-circuit instance ("`x1`"). 
         In many cases, particularly for technology-provided devices, using a foundry-provided sub-circuit will be appropriate instead. 
         Unlike the SPICE BJT, `vlsir.primitives.bipolar` *does not* include an optional fourth substrate terminal. 
-        """
-    )
+        """)
 
     return ExternalModule(
         name=QualifiedName(domain=domain, name=name),
@@ -428,8 +446,7 @@ def diode(
 
     # Apply defaults
     domain = domain or "vlsir.primitives.diode"
-    desc = desc or dedent(
-        """
+    desc = desc or dedent("""
         # Diode
 
         Ports: (p (anode), n (cathode)), in identical order to SPICE convention 
@@ -438,8 +455,7 @@ def diode(
         `vlsir.primitives.diode` largely corresponds to the "D-prefix" element of Spice-class simulators. 
         Each instance maps to a *spice model* instance ("`d1`"), *not* to sub-circuit instance ("`x1`"). 
         In many cases, particularly for technology-provided devices, using a foundry-provided sub-circuit will be appropriate instead. 
-        """
-    )
+        """)
     return ExternalModule(
         name=QualifiedName(domain=domain, name=name),
         desc=desc,
@@ -457,8 +473,7 @@ def tline(
 
     # Apply defaults
     domain = domain or "vlsir.primitives.tline"
-    desc = desc or dedent(
-        """
+    desc = desc or dedent("""
         # Transmission Line
 
         Ports: (p1p, p1n, (port 1), p2p, p2n (port 2)), in identical order to SPICE convention 
@@ -466,8 +481,7 @@ def tline(
 
         The "model-based" tline specification supports lossy lines in all known SPICE-class simulators, 
         and lossless lines in many or most. 
-        """
-    )
+        """)
 
     return ExternalModule(
         name=QualifiedName(domain=domain, name=name),

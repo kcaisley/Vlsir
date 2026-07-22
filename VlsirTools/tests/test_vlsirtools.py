@@ -33,7 +33,6 @@ from vlsirtools.spice import (
 import vlsirtools.spice.sim_data as sd
 from vlsirtools.spice.sim_data import AnalysisType
 
-
 """
 ## Utility & Helper Functions
 """
@@ -267,6 +266,60 @@ def test_spice_netlist1():
     )
     dest = StringIO()
     vlsirtools.netlist(pkg=pkg, dest=dest, fmt="spice")
+
+
+def test_spectre_bit_voltage_source():
+    """Netlist the VLSIR bit source using Spectre's native syntax."""
+
+    pkg = Package(
+        domain="vlsirtools.tests.test_spectre_bit_voltage_source",
+        modules=[
+            Module(
+                name="bit_source_tb",
+                signals=[Signal(name="out", width=1), Signal(name="VSS", width=1)],
+                instances=[
+                    Instance(
+                        name="bits",
+                        module=_prim("vbit"),
+                        connections=_connections(
+                            p=ConnectionTarget(sig="out"),
+                            n=ConnectionTarget(sig="VSS"),
+                        ),
+                        parameters=_params(
+                            data=ParamValue(literal="0011010"),
+                            period=ParamValue(literal="1u"),
+                            val0=ParamValue(int64_value=0),
+                            val1=ParamValue(double_value=1.2),
+                            delay=ParamValue(literal="1n"),
+                            rise=ParamValue(literal="3n"),
+                            fall=ParamValue(literal="3n"),
+                            rptstart=ParamValue(int64_value=1),
+                            rpttimes=ParamValue(int64_value=0),
+                        ),
+                    )
+                ],
+            )
+        ],
+    )
+
+    netlist = StringIO()
+    vlsirtools.netlist(pkg=pkg, dest=netlist, fmt="spectre")
+    text = netlist.getvalue()
+
+    assert "vsource" in text
+    assert "type=bit" in text
+    assert 'data="0011010"' in text
+    assert "period=1u" in text
+    assert "val0=0" in text
+    assert "val1=1.2" in text
+    assert "delay=1n" in text
+    assert "rise=3n" in text
+    assert "fall=3n" in text
+    assert "rptstart=1" in text
+    assert "rpttimes=0" in text
+
+    with pytest.raises(ValueError, match="vbit"):
+        vlsirtools.netlist(pkg=pkg, dest=StringIO(), fmt="spice")
 
 
 def test_netlist_hdl21_ideal1():
