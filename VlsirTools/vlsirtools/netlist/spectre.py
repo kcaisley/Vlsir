@@ -54,6 +54,14 @@ def map_primitive(rmodule: SpiceBuiltin, paramvals: ResolvedParams) -> str:
             if not wave.startswith("["):
                 wave = f"[{wave}]"
             paramvals.set("wave", wave)
+        elif vname == "vsin":
+            # VLSIR follows SPICE's SIN parameter names; Spectre's native
+            # ``vsource type=sine`` uses a different name for every field
+            # except frequency.
+            paramvals.rename("voff", "sinedc")
+            paramvals.rename("vamp", "ampl")
+            paramvals.rename("td", "delay")
+            paramvals.rename("phase", "sinephase")
         elif vname == "vbit":
             # Hdl21 currently exports string-valued primitive parameters as
             # expression literals. Spectre requires bit data to be quoted.

@@ -322,6 +322,53 @@ def test_spectre_bit_voltage_source():
         vlsirtools.netlist(pkg=pkg, dest=StringIO(), fmt="spice")
 
 
+def test_spectre_sine_voltage_source():
+    """Translate SPICE SIN fields to Spectre's native sine parameters."""
+
+    pkg = Package(
+        domain="vlsirtools.tests.test_spectre_sine_voltage_source",
+        modules=[
+            Module(
+                name="sine_source_tb",
+                signals=[Signal(name="out", width=1), Signal(name="VSS", width=1)],
+                instances=[
+                    Instance(
+                        name="sine",
+                        module=_prim("vsin"),
+                        connections=_connections(
+                            p=ConnectionTarget(sig="out"),
+                            n=ConnectionTarget(sig="VSS"),
+                        ),
+                        parameters=_params(
+                            voff=ParamValue(double_value=0.6),
+                            vamp=ParamValue(double_value=0.5),
+                            freq=ParamValue(literal="10k"),
+                            td=ParamValue(literal="2n"),
+                            phase=ParamValue(double_value=90.0),
+                        ),
+                    )
+                ],
+            )
+        ],
+    )
+
+    netlist = StringIO()
+    vlsirtools.netlist(pkg=pkg, dest=netlist, fmt="spectre")
+    text = netlist.getvalue()
+
+    assert "vsource" in text
+    assert "type=sine" in text
+    assert "sinedc=0.6" in text
+    assert "ampl=0.5" in text
+    assert "freq=10k" in text
+    assert "delay=2n" in text
+    assert "sinephase=90" in text
+    assert "voff=" not in text
+    assert "vamp=" not in text
+    assert "td=" not in text
+    assert "phase=" not in text.replace("sinephase=", "")
+
+
 def test_netlist_hdl21_ideal1():
     """Test that netlisting a (deprecated) `hdl21.ideal` element fails with a `RuntimeError`."""
 
