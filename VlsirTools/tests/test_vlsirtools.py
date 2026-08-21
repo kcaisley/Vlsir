@@ -573,6 +573,206 @@ def dummy_sim_tests(
     return sd_results
 
 
+def test_spectre_transient_parameters_are_inline():
+    """Put analysis parameters inline without reinterpreting literal controls."""
+
+    from vlsirtools.netlist import SpectreNetlister
+
+    inp = dummy_sim(skip=[AnalysisType.OP, AnalysisType.DC, AnalysisType.AC])
+    inp.an[0].tran.ctrls.extend(
+        (
+            vsp.Control(
+                param=Param(
+                    name="strobeperiod",
+                    value=ParamValue(literal="1p"),
+                )
+            ),
+            vsp.Control(literal="save foo"),
+        )
+    )
+    output = StringIO()
+    SpectreNetlister(dest=output).write_sim_input(inp)
+
+    tran_line = next(line for line in output.getvalue().splitlines() if line.startswith("tr1 tran"))
+    assert tran_line.endswith("strobeperiod=1p")
+    assert "\nsave foo\n" in output.getvalue()
+
+
+def test_spectre_nutbin_parses_inline_first_variable(tmp_path):
+    """Parse the variable-header layout emitted by Spectre 24.1."""
+
+    from vlsirtools.spice.spectre import NumType, parse_nutbin
+
+    values = np.asarray(
+        [
+            0.0,
+            0.0,
+            0.0,
+            1.0e-9,
+            -1.0e-3,
+            1.0,
+        ],
+        dtype=">f8",
+    )
+    raw_path = tmp_path / "spectre.raw"
+    raw_path.write_bytes(
+        b"Title: \n"
+        b"Date: 12:44:32 PM, Thur Aug 20, 2026\n"
+        b"Plotname: Transient Analysis `tran': time = (0 s -> 1 ns)\n"
+        b"Flags: real\n"
+        b"No. Variables:        3\n"
+        b"No. Points:       2\n"
+        b"Variables:\t0\ttime\ts\n"
+        b"\t\t1\txtop.v:p\tA plot=0 grid=0\n"
+        b"\t\t2\txtop.x\tV plot=0 grid=0\n"
+        b"Binary:\n" + values.tobytes()
+    )
+
+    with raw_path.open("rb") as raw_file:
+        result = parse_nutbin(raw_file)["tran"]
+
+    assert result.numtype == NumType.REAL
+    assert tuple(result.data) == ("time", "xtop.v:p", "xtop.x")
+    np.testing.assert_array_equal(result.data["time"], [0.0, 1.0e-9])
+    np.testing.assert_array_equal(result.data["xtop.v:p"], [0.0, -1.0e-3])
+    np.testing.assert_array_equal(result.data["xtop.x"], [0.0, 1.0])
+
+
+def test_spectre_nutbin_rejects_truncated_payload(tmp_path):
+    """Reject a payload ending after complete records despite a larger header count."""
+
+    from vlsirtools.spice.spectre import parse_nutbin
+
+    # Two complete records, while the header declares three.
+    values = np.asarray(
+        [
+            0.0,
+            0.0,
+            1.0e-9,
+            1.0,
+        ],
+        dtype=">f8",
+    )
+    raw_path = tmp_path / "truncated.raw"
+    raw_path.write_bytes(
+        b"Plotname: Transient Analysis `tran': time = (0 s -> 2 ns)\n"
+        b"Flags: real\n"
+        b"No. Variables: 2\n"
+        b"No. Points: 3\n"
+        b"Variables:\t0\ttime\ts\n"
+        b"\t\t1\tout\tV\n"
+        b"Binary:\n" + values.tobytes()
+    )
+
+    with raw_path.open("rb") as raw_file, pytest.raises(ValueError, match=r"declares 3 points.*only 4 values"):
+        parse_nutbin(raw_file)
+
+
+def test_sim_without_analyses_does_not_invoke_backend():
+    """Return an empty result when there are no declared analyses."""
+
+    from vlsirtools.spice.base import Sim as BaseSim
+
+    class BackendWhichMustNotRun(BaseSim):
+        @classmethod
+        def enum(cls):
+            return SupportedSimulators.NGSPICE
+
+        def run(self):
+            raise AssertionError("empty simulations must not invoke a backend")
+
+    inp = vsp.SimInput()
+    sim_data_result = BackendWhichMustNotRun.sim(inp, SimOptions(fmt=ResultFormat.SIM_DATA))
+    proto_result = BackendWhichMustNotRun.sim(inp, SimOptions(fmt=ResultFormat.VLSIR_PROTO))
+
+    assert isinstance(sim_data_result, sd.SimResult)
+    assert sim_data_result.an == []
+    assert isinstance(proto_result, vsp.SimResult)
+    assert proto_result.an == []
+
+
+def test_simulator_arguments_are_per_invocation(monkeypatch):
+    """Pass command arguments through one simulation without global mutation."""
+
+    from vlsirtools.spice.ngspice import NGSpiceSim
+    from vlsirtools.spice.spectre import SpectreSim
+    from vlsirtools.spice.xyce import XyceSim
+
+    options = SimOptions(
+        simulator=SupportedSimulators.SPECTRE,
+        simulator_args=("+preset=mx", "+mt=4", "+log", "spectre.log"),
+    )
+    spectre = SpectreSim(inp=vsp.SimInput(), opts=options)
+    commands = []
+    monkeypatch.setattr(spectre, "run_subprocess", commands.append)
+
+    spectre.run_spectre_process()
+
+    assert commands == [
+        [
+            "spectre",
+            "+preset=mx",
+            "+mt=4",
+            "+log",
+            "spectre.log",
+            "-E",
+            "-format",
+            "nutbin",
+            "netlist.scs",
+        ]
+    ]
+
+    commands.clear()
+    ngspice = NGSpiceSim(inp=vsp.SimInput(), opts=options)
+    monkeypatch.setattr(ngspice, "run_subprocess", commands.append)
+    ngspice.run_sim_process()
+    assert commands == [
+        [
+            "ngspice",
+            "--no-spiceinit",
+            "+preset=mx",
+            "+mt=4",
+            "+log",
+            "spectre.log",
+            "-b",
+            "netlist.sp",
+            "-r",
+            "netlist.raw",
+        ]
+    ]
+
+    commands.clear()
+    xyce = XyceSim(inp=vsp.SimInput(), opts=options)
+    monkeypatch.setattr(xyce, "run_subprocess", lambda cmd: commands.append(cmd))
+    xyce.run_xyce_process("tran")
+    assert commands == [["Xyce", "+preset=mx", "+mt=4", "+log", "spectre.log", "tran.sp"]]
+
+    with pytest.raises(TypeError, match="sequence"):
+        SimOptions(simulator_args="+mt=4")
+
+
+def test_spectre_can_run_without_parsing_results(monkeypatch):
+    """Leave Spectre's native raw format intact when results are not requested."""
+
+    from vlsirtools.spice.spectre import SpectreSim
+
+    options = SimOptions(simulator=SupportedSimulators.SPECTRE, fmt=ResultFormat.NONE)
+    spectre = SpectreSim(inp=vsp.SimInput(), opts=options)
+    commands = []
+    monkeypatch.setattr(spectre, "write_netlist", lambda: None)
+    monkeypatch.setattr(spectre, "run_subprocess", commands.append)
+    monkeypatch.setattr(spectre, "parse_results", lambda: pytest.fail("results must not be parsed"))
+
+    result = spectre.run()
+
+    assert isinstance(result, sd.SimResult)
+    assert result.an == []
+    assert commands == [["spectre", "-E", "netlist.scs"]]
+
+    with pytest.raises(ValueError, match="only supported by the Spectre backend"):
+        SimOptions(simulator=SupportedSimulators.NGSPICE, fmt=ResultFormat.NONE)
+
+
 @pytest.mark.spectre
 def test_spectre1():
     """Test an empty-input call to the `vlsir.spice.Sim` interface to `spectre`."""

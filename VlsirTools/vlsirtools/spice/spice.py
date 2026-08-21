@@ -5,7 +5,7 @@
 # Std-Lib Imports
 import os, subprocess
 import concurrent.futures
-from typing import Union, Optional, Sequence, TypeVar
+from typing import Union, Optional, Sequence, TypeVar, Tuple
 from enum import Enum
 from pathlib import Path
 from textwrap import dedent
@@ -20,6 +20,7 @@ from . import sim_data as sd
 class ResultFormat(Enum):
     """Enumerated Result Formats"""
 
+    NONE = "none"  # Execute Spectre without loading simulator results into memory
     SIM_DATA = "sim_data"  # Types defined in the `sim_data` module
     VLSIR_PROTO = "vlsir_proto"  # `vsp.SimResults` and related protobuf-defined types
 
@@ -57,9 +58,7 @@ def default() -> Optional[SupportedSimulators]:
 
 @dataclass
 class SimOptions:
-    """Options to `vsp.Sim` which are *not* passed along to the simulator.
-    I.e. options which effect the Python-process invoking simulation,
-    but not the internals of the simulation itself."""
+    """Options controlling simulator invocation and in-memory result handling."""
 
     # Simulator. FIXME: debatable whether to include this.
     simulator: SupportedSimulators = field(default_factory=default)
@@ -69,6 +68,18 @@ class SimOptions:
 
     # Simulation run-directory. Uses a `tempdir` if unspecified.
     rundir: Optional[os.PathLike] = None
+
+    # Additional command-line arguments passed to the selected simulator.
+    simulator_args: Tuple[str, ...] = field(default_factory=tuple)
+
+    def __post_init__(self) -> None:
+        if isinstance(self.simulator_args, (str, bytes)):
+            raise TypeError("simulator_args must be a sequence of argument strings")
+        if any(not isinstance(arg, str) for arg in self.simulator_args):
+            raise TypeError("simulator_args must contain only strings")
+        self.simulator_args = tuple(self.simulator_args)
+        if self.fmt == ResultFormat.NONE and self.simulator != SupportedSimulators.SPECTRE:
+            raise ValueError("ResultFormat.NONE is only supported by the Spectre backend")
 
 
 # Shorthand type alias for "an element or list thereof", used by all the call signatures below

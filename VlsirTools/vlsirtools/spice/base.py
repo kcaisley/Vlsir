@@ -71,13 +71,20 @@ class Sim:
         if opts is None:  # Create the default `SimOptions`
             opts = SimOptions(simulator=cls.enum())
 
-        # Create the simulation-class instance, and execute its main `run` method
-        sim = cls(inp=inp, opts=opts)
-        try:
-            sim.setup()
-            results = sim.run()
-        finally:
-            sim.cleanup()
+        if not inp.an:
+            # With no declared analyses there is no simulator work to do and,
+            # for several backends, no raw result file to parse.
+            from .sim_data import SimResult
+
+            results = SimResult(an=[])
+        else:
+            # Create the simulation-class instance, and execute its main `run` method
+            sim = cls(inp=inp, opts=opts)
+            try:
+                sim.setup()
+                results = sim.run()
+            finally:
+                sim.cleanup()
 
         # FIXME: we shouldn't need this `isinstance`; get Xyce to return `sd.SimResult` and decide whether to convert here
         if opts.fmt == ResultFormat.VLSIR_PROTO and not isinstance(

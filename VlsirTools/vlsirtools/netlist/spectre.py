@@ -346,11 +346,12 @@ class SpectreNetlister(SpectreSpiceShared):
         """# Write a `Save` statement"""
         # Spectre uses `save` statement for specifying signals to save
         # Mode: NONE means save nothing, ALL means save everything
-        if save.mode == vsp.Save.SaveMode.ALL:
+        target = save.WhichOneof("save")
+        if target == "mode" and save.mode == vsp.Save.SaveMode.ALL:
             self.writeln("save *")
-        elif save.mode == vsp.Save.SaveMode.NONE:
+        elif target == "mode" and save.mode == vsp.Save.SaveMode.NONE:
             pass  # Don't save anything
-        elif save.signal:
+        elif target == "signal":
             # Save specific signal
             signals = " ".join(s.strip() for s in save.signal.split(",") if s.strip())
             self.writeln(f"save {signals}")
@@ -452,10 +453,19 @@ class SpectreNetlister(SpectreSpiceShared):
         if an.noise:
             parts.append("isnoisy=yes")
 
+        # Analysis-local parameters belong on the analysis statement. Other
+        # controls, including arbitrary literals, remain standalone.
+        standalone_controls = []
+        for ctrl in an.ctrls:
+            if ctrl.WhichOneof("ctrl") == "param":
+                parts.append(f"{ctrl.param.name}={self.get_param_value(ctrl.param.value)}")
+            else:
+                standalone_controls.append(ctrl)
+
         self.writeln(" ".join(parts))
 
         # Write control elements for this analysis
-        for ctrl in an.ctrls:
+        for ctrl in standalone_controls:
             self.write_control_element(ctrl)
 
     def write_noise(self, an: vsp.NoiseInput) -> None:

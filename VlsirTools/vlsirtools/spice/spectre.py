@@ -15,14 +15,14 @@ import vlsir.spice_pb2 as vsp
 from ..netlist.spectre import SpectreNetlister
 from .base import Sim
 from .sim_data import TranResult, OpResult, SimResult, AcResult, DcResult
-from .spice import SupportedSimulators, sim
+from .spice import ResultFormat, SupportedSimulators, sim
 
 # Module-level configuration. Over-writeable by sufficiently motivated users.
 
 # The simulator executable invoked. If over-ridden, likely for sake of a specific path or version.
 SPECTRE_EXECUTABLE = "spectre"
 # Additional arguments to pass to the simulator executable.
-SPECTRE_ARGS = ""  ##"++aps"
+SPECTRE_ARGS: str = ""  ##"++aps"
 
 
 def available() -> bool:
@@ -67,6 +67,9 @@ class SpectreSim(Sim):
 
         # Run the simulation
         self.run_spectre_process()
+
+        if self.opts.fmt == ResultFormat.NONE:
+            return SimResult(an=[])
 
         # Parse the results
         return self.parse_results()
@@ -160,9 +163,15 @@ class SpectreSim(Sim):
     def run_spectre_process(self) -> None:
         """Run a Spectre sub-process, executing the simulation"""
         # Note the `nutbin` output format is dictated here
-        cmd = shlex.split(
-            f"{SPECTRE_EXECUTABLE} {SPECTRE_ARGS} -E -format nutbin netlist.scs"
-        )
+        result_args = [] if self.opts.fmt == ResultFormat.NONE else ["-format", "nutbin"]
+        cmd = [
+            SPECTRE_EXECUTABLE,
+            *shlex.split(SPECTRE_ARGS),
+            *self.opts.simulator_args,
+            "-E",
+            *result_args,
+            "netlist.scs",
+        ]
         return self.run_subprocess(cmd)
 
 
@@ -299,14 +308,17 @@ def parse_nutbin_analysis(f: IO, plotname: str) -> NutBinAnalysis:
     # Decode the variables spec, looks like the following
     # Variables: [Variable idx] [Variable name] [units] [optional_flags]
     while True:
-        line = f.readline().decode("ascii")
-        if not line:
+        variables_line = f.readline().decode("ascii")
+        if not variables_line:
             raise ValueError(f"Could not find Variables: line for plot {plotname}")
-        if line.startswith("Variables:"):
+        if variables_line.startswith("Variables:"):
             break
 
     var_specs = []
-    for i in range(num_vars):
+    first_var_spec = variables_line[len("Variables:") :]
+    if first_var_spec.strip():
+        var_specs.append(_read_var_spec(first_var_spec))
+    for _ in range(num_vars - len(var_specs)):
         var_specs.append(_read_var_spec(f.readline().decode("ascii")))
 
     # Read the binary data, should look like the following:
@@ -319,9 +331,21 @@ def parse_nutbin_analysis(f: IO, plotname: str) -> NutBinAnalysis:
             break
     assert binary_line == "Binary:\n"
     # Data is big endian
+    expected_value_count = num_vars * num_pts
     bin_data = np.fromfile(
-        f, dtype=np.dtype(nptype).newbyteorder(">"), count=num_vars * num_pts
+        f,
+        dtype=np.dtype(nptype).newbyteorder(">"),
+        count=expected_value_count,
     )
+    if bin_data.size != expected_value_count:
+        complete_points, partial_values = divmod(bin_data.size, num_vars)
+        raise ValueError(
+            f"Spectre NUTBIN plot {sim_name!r} declares "
+            f"{num_pts} points × {num_vars} variables "
+            f"({expected_value_count} values), but its binary payload contains "
+            f"only {bin_data.size} values "
+            f"({complete_points} complete points and {partial_values} partial values)"
+        )
     data = {}
     units = {}
     for i, var in enumerate(var_specs):
@@ -339,10 +363,13 @@ def parse_nutbin_analysis(f: IO, plotname: str) -> NutBinAnalysis:
 def _read_var_spec(line: str) -> VarSpec:
     """Read a Variable spec line from the input
     and return the name and the units."""
-    m = re.match(
-        r"\s+(?P<idx>\d+)\s+(?P<name>\S+)\s+(?P<units>\S+)(?P<rest>.*)\n", line
+    match = re.fullmatch(
+        r"\s*(?P<idx>\d+)\s+(?P<name>\S+)\s+(?P<units>\S+)(?P<rest>.*)",
+        line.rstrip("\n"),
     )
-    return VarSpec(name=m.group("name"), units=Units.from_str(m.group("units")))
+    if match is None:
+        raise ValueError(f"Invalid Spectre NUTBIN variable specification {line!r}")
+    return VarSpec(name=match.group("name"), units=Units.from_str(match.group("units")))
 
 
 def parse_mt0(file: IO) -> Dict[str, float]:

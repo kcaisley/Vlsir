@@ -9,7 +9,6 @@ from enum import Enum
 from warnings import warn
 from dataclasses import dataclass
 from typing import Mapping, IO, Dict
-import shlex
 
 # External Imports
 import numpy as np
@@ -200,7 +199,16 @@ class NGSpiceSim(Sim):
     def run_sim_process(self) -> None:
         """Run a NGSpice sub-process, executing the simulation"""
         # Note the `nutbin` output format is dictated here
-        cmd = shlex.split(f"{NGSPICE_EXECUTABLE} -b netlist.sp -r netlist.raw")
+        cmd = [
+            NGSPICE_EXECUTABLE,
+            # The parser below requires nutbin; user init files can override it.
+            "--no-spiceinit",
+            *self.opts.simulator_args,
+            "-b",
+            "netlist.sp",
+            "-r",
+            "netlist.raw",
+        ]
         return self.run_subprocess(cmd)
 
 

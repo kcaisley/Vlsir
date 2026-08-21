@@ -8,7 +8,6 @@ import concurrent.futures
 from glob import glob
 from os import PathLike
 from typing import IO, Dict, Union
-import shlex
 
 import numpy as np
 import pandas as pd
@@ -359,7 +358,7 @@ class XyceSim(Sim):
 
     def run_xyce_process(self, name: str) -> None:
         """Run a `Xyce` sub-process executing the simulation."""
-        return self.run_subprocess(cmd=shlex.split(f"{XYCE_EXECUTABLE} {name}.sp"))
+        return self.run_subprocess(cmd=[XYCE_EXECUTABLE, *self.opts.simulator_args, f"{name}.sp"])
 
     def parse_measurements(self, analysis_name: str) -> Dict[str, float]:
         # FIXME: the *input* should really be dictating whether we have measurements.
