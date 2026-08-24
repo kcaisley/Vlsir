@@ -1,3 +1,5 @@
+from pathlib import Path
+
 import vlsir
 from vlsirtools.netlist import (
     netlist_from_proto,
@@ -7,16 +9,18 @@ from vlsirtools.netlist import (
 def test_netlist_from_proto1():
     """Netlisting from protobuf, smoke test"""
 
-    netlist_path = "scratch/test_netlist1.sp"
+    output_dir = Path("build/vlsirtools")
+    output_dir.mkdir(parents=True, exist_ok=True)
+    netlist_path = output_dir / "test_netlist1.sp"
     netlist_from_proto(
         vlsir.netlist.NetlistInput(
             pkg=vlsir.circuit.Package(),
-            netlist_path=netlist_path,
+            netlist_path=str(netlist_path),
             fmt=vlsir.netlist.NetlistFormat.SPICE,
-            result_path="scratch/test_netlist1.result.pb",  # (this doesn't do anything)
+            result_path=str(output_dir / "test_netlist1.result.pb"),  # (this doesn't do anything)
         )
     )
-    readback = open(netlist_path, "r").read()
+    readback = netlist_path.read_text()
     assert len(readback) > 0
     # These are tests we often come to regret, checking netlist literal content. But gotta do something for now!
     assert "* Anonymous `circuit.Package`" in readback

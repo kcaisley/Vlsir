@@ -542,7 +542,7 @@ def dummy_sim_tests(
         opts=SimOptions(
             simulator=simulator,
             fmt=ResultFormat.SIM_DATA,
-            rundir="./scratch",
+            rundir="./build/vlsirtools",
         ),
     )
 
