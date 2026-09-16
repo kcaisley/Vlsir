@@ -1,9 +1,29 @@
 from pathlib import Path
 
+import pytest
 import vlsir
+import vlsir.circuit_pb2 as vckt
 from vlsirtools.netlist import (
     netlist_from_proto,
 )
+from vlsirtools.netlist.spectre import SpectreNetlister
+
+
+@pytest.mark.parametrize(
+    "name, expected",
+    [("plain", "plain"), ("plate<0>", r"plate\<0\>"), ("plate<15>", r"plate\<15\>")],
+)
+def test_spectre_signal_angle_brackets(name, expected):
+    """Literal brackets are escaped without changing bus expansion or the proto."""
+    scalar = vckt.Signal(name=name, width=1)
+    vector = vckt.Signal(name=name, width=3)
+    part = vckt.Slice(signal=name, bot=0, top=1)
+    assert SpectreNetlister.format_signal_ref(scalar) == expected
+    assert SpectreNetlister.format_signal_ref(vector) == " ".join(
+        f"{expected}_{index}" for index in (2, 1, 0)
+    )
+    assert SpectreNetlister.format_signal_slice(part) == f"{expected}_1 {expected}_0"
+    assert scalar.name == vector.name == part.signal == name
 
 
 def test_netlist_from_proto1():

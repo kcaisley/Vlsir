@@ -281,22 +281,28 @@ class SpectreNetlister(SpectreSpiceShared):
         """Get a netlist `Port` reference"""
         return self.format_signal_ref(self.get_signal(pport.signal))
 
+    @staticmethod
+    def escape_signal_name(name: str) -> str:
+        """Preserve literal angle-bracket pin names instead of parsing operators."""
+        return name.replace("<", r"\<").replace(">", r"\>")
+
     @classmethod
     def format_signal_ref(cls, psig: vckt.Signal) -> str:
         """Get a netlist definition for Signal `psig`"""
         if psig.width < 1:
             raise RuntimeError
+        name = cls.escape_signal_name(psig.name)
         if psig.width == 1:  # width==1, i.e. a scalar signal
-            return psig.name
+            return name
         # Vector/ multi "bit" Signal. Creates several spice signals.
         return " ".join(
-            [f"{psig.name}{cls.format_bus_bit(k)}" for k in reversed(range(psig.width))]
+            [f"{name}{cls.format_bus_bit(k)}" for k in reversed(range(psig.width))]
         )
 
     @classmethod
     def format_signal_slice(cls, pslice: vckt.Slice) -> str:
         """Get a netlist definition for Signal-Slice `pslice`"""
-        base = pslice.signal
+        base = cls.escape_signal_name(pslice.signal)
         indices = list(reversed(range(pslice.bot, pslice.top + 1)))
         if not len(indices):
             raise RuntimeError(f"Attempting to netlist empty slice {pslice}")
