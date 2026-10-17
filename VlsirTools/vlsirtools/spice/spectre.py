@@ -5,8 +5,9 @@ Spectre Implementation of `vlsir.spice.Sim`
 # Std-Lib Imports
 import subprocess, re, shutil, glob, shlex
 import numpy as np
-from typing import Tuple, Any, Mapping, Optional, IO, Dict
+from typing import Tuple, Any, Mapping, Optional, IO, Dict, List
 from dataclasses import dataclass
+from pathlib import Path
 from warnings import warn
 from enum import Enum
 
@@ -14,7 +15,7 @@ from enum import Enum
 import vlsir.spice_pb2 as vsp
 from ..netlist.spectre import SpectreNetlister
 from .base import Sim
-from .sim_data import TranResult, OpResult, SimResult, AcResult, DcResult
+from .sim_data import TranResult, OpResult, SimResult, AcResult, DcResult, NoiseResult
 from .spice import ResultFormat, SupportedSimulators, sim
 
 # Module-level configuration. Over-writeable by sufficiently motivated users.
@@ -82,13 +83,26 @@ class SpectreSim(Sim):
         netlister.write_sim_input(self.inp)
         netlist_file.close()
 
+    def has_noise(self) -> bool:
+        """Whether the input includes a noise analysis. Spectre's nutmeg writers (binary and
+        ASCII) leave a noise analysis's totals (`out`, `in`, `gain`) out of their data, so such
+        a simulation writes, and is read from, PSF ASCII instead."""
+        return any(an.WhichOneof("an") == "noise" for an in self.inp.an)
+
     def parse_results(self) -> SimResult:
         """# Parse output data"""
 
-        # Parse output data
-        data = parse_nutbin(self.open("netlist.raw", "rb"))
+        # Parse output data: nutbin, or PSF ASCII when a noise analysis needs it
+        if self.has_noise():
+            data = parse_psfascii(Path(self.rundir) / "netlist.raw")
+        else:
+            data = parse_nutbin(self.open("netlist.raw", "rb"))
         an_type_dispatch = dict(
-            ac=self.parse_ac, dc=self.parse_dc, op=self.parse_op, tran=self.parse_tran
+            ac=self.parse_ac,
+            dc=self.parse_dc,
+            op=self.parse_op,
+            tran=self.parse_tran,
+            noise=self.parse_noise,
         )
         results = []
         for an in self.inp.an:
@@ -135,6 +149,18 @@ class SpectreSim(Sim):
             measurements=measurements,
         )
 
+    def parse_noise(self, an: vsp.NoiseInput, psf: "PsfAnalysis") -> NoiseResult:
+        """Extract a noise analysis's results: `freq`, the output noise `out` and the input-referred
+        `in` (both per square-root hertz), the `gain` from the input source to the output, and each
+        noise source's contribution as `<instance>.<source>` (per hertz, squared quantity).
+        """
+        return NoiseResult(
+            analysis_name=an.analysis_name,
+            data=psf.data,
+            integrated_noise={},
+            measurements={},
+        )
+
     def parse_op(self, an: vsp.OpInput, nutbin: "NutBinAnalysis") -> OpResult:
         return OpResult(
             analysis_name=an.analysis_name,
@@ -162,8 +188,13 @@ class SpectreSim(Sim):
 
     def run_spectre_process(self) -> None:
         """Run a Spectre sub-process, executing the simulation"""
-        # Note the `nutbin` output format is dictated here
-        result_args = [] if self.opts.fmt == ResultFormat.NONE else ["-format", "nutbin"]
+        # Note the output format is dictated here: nutbin, or PSF ASCII for a noise analysis
+        if self.opts.fmt == ResultFormat.NONE:
+            result_args = []
+        elif self.has_noise():
+            result_args = ["-format", "psfascii"]
+        else:
+            result_args = ["-format", "nutbin"]
         cmd = [
             SPECTRE_EXECUTABLE,
             *shlex.split(SPECTRE_ARGS),
@@ -206,6 +237,15 @@ class Units(FromStr, Enum):
     AMPS = "A"
     HERTZ = "Hz"
     CELSIUS = "C"
+    # Noise analyses: contributions, densities, and the input-to-output gain
+    VOLTS_SQUARED_PER_HERTZ = "V^2/Hz"
+    AMPS_SQUARED_PER_HERTZ = "A^2/Hz"
+    VOLTS_PER_ROOT_HERTZ = "V/sqrt(Hz)"
+    AMPS_PER_ROOT_HERTZ = "A/sqrt(Hz)"
+    VOLTS_PER_VOLT = "V/V"
+    AMPS_PER_AMP = "A/A"
+    VOLTS_PER_AMP = "V/A"
+    AMPS_PER_VOLT = "A/V"
 
 
 @dataclass
@@ -229,7 +269,8 @@ class NutBinAnalysis:
 def parse_nutbin(f: IO) -> Mapping[str, NutBinAnalysis]:
     """Parse a `nutbin` format set of simulation results.
     Returns results as a dictionary from `analysis_name` to `NutBinAnalysis`.
-    Note this is paired with the simulator invocation commands, which include `format=nutbin`."""
+    Note this is paired with the simulator invocation commands, which include `format=nutbin`.
+    """
 
     # And parse the file per-analysis
     rv = {}
@@ -390,3 +431,159 @@ def parse_mt0(file: IO) -> Dict[str, float]:
 
     values = [convert(s) for s in values.split()]
     return dict(zip(keys, values))
+
+
+# PSF ASCII
+#
+# Spectre writes each analysis to its own file in the raw directory. Each file holds a `HEADER`
+# of quoted key-value pairs, a `TYPE` table, for a swept analysis a `SWEEP` and a `TRACE` list,
+# then `VALUE`: per sweep point, the sweep variable then each trace, or, unswept, each signal
+# with its type. A complex value is `(re im)`, a struct (a noise source's contributions) a
+# parenthesized list of its fields.
+
+_PSF_TOKEN = re.compile(r'"(?:[^"\\]|\\.)*"|\(|\)|[^\s()"]+')
+
+
+@dataclass
+class PsfAnalysis:
+    """Analysis result from a PSF ASCII file."""
+
+    analysis_name: str  # Analysis name
+    analysis_type: str  # Analysis type, such as `ac` or `noise`
+    data: Mapping[str, np.ndarray]  # Signal name => data
+
+
+def _psf_number(token: str) -> float:
+    return float(token)
+
+
+def _psf_skip_group(tokens: List[str], i: int) -> int:
+    """Return the index past the parenthesized group opening at `tokens[i]`."""
+    depth = 0
+    while True:
+        if tokens[i] == "(":
+            depth += 1
+        elif tokens[i] == ")":
+            depth -= 1
+            if depth == 0:
+                return i + 1
+        i += 1
+
+
+def _psf_types(tokens: List[str]) -> Dict[str, Any]:
+    """Read the `TYPE` section: each type name to `"complex"`, `"float"`, or its struct field names."""
+    types: Dict[str, Any] = {}
+    i = 0
+    while i < len(tokens):
+        name = tokens[i].strip('"')
+        kind = tokens[i + 1]
+        if kind == "STRUCT":
+            fields, j = [], i + 3  # past STRUCT and its "("
+            while tokens[j] != ")":
+                fields.append(tokens[j].strip('"'))
+                j += 1
+                while tokens[j] not in ("(", ")") and not tokens[j].startswith('"'):
+                    j += 1  # the field's FLOAT DOUBLE
+                if tokens[j] == "PROP":
+                    j += 1
+                if tokens[j] == "(":
+                    j = _psf_skip_group(tokens, j)
+            types[name] = fields
+            i = j + 1
+        else:
+            types[name] = "complex" if kind == "COMPLEX" else "float"
+            i += 1
+            while (
+                i < len(tokens)
+                and not tokens[i].startswith('"')
+                and tokens[i] != "PROP"
+            ):
+                i += 1
+        if i < len(tokens) and tokens[i] == "PROP":
+            i = _psf_skip_group(tokens, i + 1)
+    return types
+
+
+def parse_psfascii_file(text: str) -> PsfAnalysis:
+    """Parse one PSF ASCII analysis file."""
+
+    sections: Dict[str, List[str]] = {}
+    current = None
+    for line in text.splitlines():
+        if line in ("HEADER", "TYPE", "SWEEP", "TRACE", "VALUE", "END"):
+            current = line
+            sections[current] = []
+        elif current is not None:
+            sections[current].extend(_PSF_TOKEN.findall(line))
+    header = sections.get("HEADER", [])
+    header_values = {
+        header[k].strip('"'): header[k + 1].strip('"')
+        for k in range(0, len(header) - 1, 2)
+    }
+    types = _psf_types(sections.get("TYPE", []))
+    sweep = sections.get("SWEEP", [])
+    trace = sections.get("TRACE", [])
+    trace_types: Dict[str, str] = {}
+    k = 0
+    while k + 1 < len(trace):
+        trace_types[trace[k].strip('"')] = trace[k + 1].strip('"')
+        k += 2
+        if k < len(trace) and trace[k] == "PROP":
+            k = _psf_skip_group(trace, k + 1)
+    values = sections.get("VALUE", [])
+    columns: Dict[str, List[Any]] = {}
+    i = 0
+    while i < len(values):
+        name = values[i].strip('"')
+        i += 1
+        if not sweep and values[i].startswith('"'):
+            type_name = values[i].strip('"')  # an unswept value names its type
+            i += 1
+        else:
+            type_name = trace_types.get(name, "sweep")
+        kind = types.get(type_name, "float")
+        if values[i] == "(":
+            end = _psf_skip_group(values, i)
+            numbers = [
+                _psf_number(token)
+                for token in values[i + 1 : end - 1]
+                if token not in ("(", ")")
+            ]
+            i = end
+            if kind == "complex" or (not isinstance(kind, list) and len(numbers) == 2):
+                columns.setdefault(name, []).append(complex(numbers[0], numbers[1]))
+            else:
+                fields = (
+                    kind
+                    if isinstance(kind, list)
+                    else [str(k) for k in range(len(numbers))]
+                )
+                for field, number in zip(fields, numbers):
+                    columns.setdefault(f"{name}.{field}", []).append(number)
+        else:
+            columns.setdefault(name, []).append(_psf_number(values[i]))
+            i += 1
+        if i < len(values) and values[i] == "PROP":
+            i = _psf_skip_group(values, i + 1)
+    return PsfAnalysis(
+        analysis_name=header_values.get("analysis name", ""),
+        analysis_type=header_values.get("analysis type", ""),
+        data={name: np.asarray(column) for name, column in columns.items()},
+    )
+
+
+def parse_psfascii(rawdir: Path) -> Mapping[str, PsfAnalysis]:
+    """Parse a PSF ASCII raw directory: every analysis file, by analysis name. Files that hold no
+    analysis (the log, operating-point info) are skipped."""
+
+    rv = {}
+    for path in sorted(Path(rawdir).iterdir()):
+        if not path.is_file() or path.name == "logFile":
+            continue
+        text = path.read_text(errors="replace")
+        if not text.startswith("HEADER"):
+            continue
+        an = parse_psfascii_file(text)
+        if an.analysis_name and an.analysis_type != "info":
+            rv[an.analysis_name] = an
+    return rv

@@ -464,7 +464,9 @@ class SpectreNetlister(SpectreSpiceShared):
         standalone_controls = []
         for ctrl in an.ctrls:
             if ctrl.WhichOneof("ctrl") == "param":
-                parts.append(f"{ctrl.param.name}={self.get_param_value(ctrl.param.value)}")
+                parts.append(
+                    f"{ctrl.param.name}={self.get_param_value(ctrl.param.value)}"
+                )
             else:
                 standalone_controls.append(ctrl)
 
@@ -475,8 +477,31 @@ class SpectreNetlister(SpectreSpiceShared):
             self.write_control_element(ctrl)
 
     def write_noise(self, an: vsp.NoiseInput) -> None:
-        """# Write a noise analysis."""
-        raise NotImplementedError
+        """# Write a noise analysis.
+
+        Spectre's syntax: `name (outp outn) noise start= stop= dec= iprobe=source`, the output a
+        pair of nets (the negative one ground when absent) and the input a source, both named
+        hierarchically from the top-level instance `xtop`."""
+
+        if not an.analysis_name:
+            raise RuntimeError(f"Analysis name required for {an}")
+        if len(an.ctrls):
+            raise NotImplementedError  # FIXME!
+        if not an.output_p or not an.input_source:
+            raise ValueError(
+                f"Noise analysis {an.analysis_name} requires an output and an input source"
+            )
+        if an.fstart <= 0 or an.fstop <= an.fstart:
+            raise ValueError(f"Invalid noise sweep {an.fstart} to {an.fstop}")
+        if an.npts <= 0:
+            raise ValueError(f"Invalid `npts` {an.npts}")
+
+        output_n = f"xtop.{an.output_n}" if an.output_n else "0"
+        line = (
+            f"{an.analysis_name} (xtop.{an.output_p} {output_n}) noise "
+            f"start={an.fstart} stop={an.fstop} dec={an.npts} iprobe=xtop.{an.input_source}"
+        )
+        self.writeln(line)
 
     def write_monte(self, an: vsp.MonteInput) -> None:
         """# Write a Spectre-native Monte Carlo analysis block.
