@@ -521,13 +521,21 @@ class SpectreNetlister(SpectreSpiceShared):
         if an.seed:
             parts.append(f"seed={an.seed}")
         parts.append("variations=all")
+        # Analysis-local parameters (e.g. savefamilyplots=yes) belong on the statement, as a
+        # transient's do; other controls stay inside the block
+        standalone_controls = []
+        for ctrl in an.ctrls:
+            if ctrl.WhichOneof("ctrl") == "param":
+                parts.append(f"{ctrl.param.name}={self.get_param_value(ctrl.param.value)}")
+            else:
+                standalone_controls.append(ctrl)
         self.writeln(" ".join(parts) + " {")
 
         # Indent the block contents
         self.indent += 1
 
         # Write control elements for the Monte Carlo block
-        for ctrl in an.ctrls:
+        for ctrl in standalone_controls:
             self.write_control_element(ctrl)
 
         # Write each child analysis
